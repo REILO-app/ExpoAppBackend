@@ -91,10 +91,10 @@ router.post('/referrals/:id/history', authMiddleware, async (req, res) => {
   try {
     const referral = await Referral.findOne({ _id: req.params.id, userId: req.user._id });
     if (!referral) return res.status(404).json({ error: 'Not found' });
-    
+
     referral.history.push(req.body);
     await referral.save();
-    
+
     res.json({ ...referral.toObject(), id: referral._id.toString() });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -105,7 +105,7 @@ router.put('/referrals/:id/status', authMiddleware, async (req, res) => {
   try {
     const referral = await Referral.findOne({ _id: req.params.id, userId: req.user._id });
     if (!referral) return res.status(404).json({ error: 'Not found' });
-    
+
     const { status, statusColor, statusBg, statusBorder, dotColor } = req.body;
     if (status) referral.status = status;
     if (statusColor) referral.statusColor = statusColor;
@@ -120,7 +120,7 @@ router.put('/referrals/:id/status', authMiddleware, async (req, res) => {
       icon: 'refresh-cw',
       color: '#F59E0B'
     });
-    
+
     await referral.save();
     res.json({ ...referral.toObject(), id: referral._id.toString() });
   } catch (err) {
