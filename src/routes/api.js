@@ -199,6 +199,23 @@ router.delete('/jobs/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Get jobs linked to a referral (by matching referral name to job referrer)
+router.get('/referrals/:id/jobs', authMiddleware, async (req, res) => {
+  try {
+    const referral = await Referral.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!referral) return res.status(404).json({ error: 'Referral not found' });
+
+    const jobs = await Job.find({
+      userId: req.user._id,
+      referrer: { $regex: new RegExp(`^${referral.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    }).sort({ createdAt: -1 });
+
+    res.json(jobs.map(j => ({ ...j.toObject(), id: j._id.toString() })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Notification Routes ---
 router.get('/notifications', authMiddleware, async (req, res) => {
   try {
