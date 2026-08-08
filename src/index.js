@@ -183,12 +183,38 @@ app.get('/api/referral/action', async (req, res) => {
   try {
     const referral = await Referral.findById(referralId);
     if (referral) {
+      console.log('[ACTION] Found referral:', referral._id, 'Current history length:', referral.history?.length);
+      
       referral.status = statusLabel;
       referral.statusColor = isAccepted ? '#059669' : '#DC2626';
       referral.statusBg = isAccepted ? '#ECFDF5' : '#FEF2F2';
       referral.statusBorder = isAccepted ? '#A7F3D0' : '#FECACA';
       referral.dotColor = isAccepted ? '#10B981' : '#EF4444';
-      await referral.save();
+      
+      // Ensure history array exists
+      if (!referral.history) {
+        referral.history = [];
+      }
+
+      const historyEvent = {
+        type: isAccepted ? 'referral_accepted' : 'referral_rejected',
+        title: isAccepted ? 'Request Accepted' : 'Request Rejected',
+        description: isInvite 
+          ? `Connection request was ${isAccepted ? 'accepted' : 'rejected'}`
+          : `Referral request for the job was ${isAccepted ? 'accepted' : 'rejected'}`,
+        icon: isAccepted ? 'check-circle' : 'x-circle',
+        color: isAccepted ? '#10B981' : '#EF4444',
+        timestamp: new Date()
+      };
+
+      referral.history.push(historyEvent);
+      referral.markModified('history');
+      
+      console.log('[ACTION] History after push, length:', referral.history.length);
+      console.log('[ACTION] New event:', JSON.stringify(historyEvent));
+
+      const saved = await referral.save();
+      console.log('[ACTION] Save complete. Saved history length:', saved.history?.length);
 
       let notificationTitle;
       let notificationMessage;

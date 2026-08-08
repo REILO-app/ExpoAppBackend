@@ -120,6 +120,7 @@ router.put('/referrals/:id/status', authMiddleware, async (req, res) => {
       icon: 'refresh-cw',
       color: '#F59E0B'
     });
+    referral.markModified('history');
 
     await referral.save();
     res.json({ ...referral.toObject(), id: referral._id.toString() });
