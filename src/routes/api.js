@@ -60,7 +60,7 @@ router.post('/referrals', authMiddleware, async (req, res) => {
     await referral.save();
 
     const user = await User.findById(req.user._id);
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
     const emailResult = user
       ? await sendReferralInviteEmail({ referral, user, baseUrl })
       : { sent: false, reason: 'user_not_found' };

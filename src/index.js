@@ -93,7 +93,7 @@ app.post('/api/send-email', optionalUpload, async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Email body is required' });
   }
 
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
   let yesUrl = null;
   let noUrl = null;
 
@@ -145,8 +145,8 @@ app.get('/api/preview-email', (req, res) => {
 
   const htmlBody = buildReiloEmailHtml({
     body: "Hi Vansh,\n\nHope you're doing great!\n\nThis is a sample preview of how your email draft looks.\n\nBest,\nPrasad",
-    yesUrl: "http://localhost:3000/api/referral/action?jobId=1&referralId=1&action=yes",
-    noUrl: "http://localhost:3000/api/referral/action?jobId=1&referralId=1&action=no",
+    yesUrl: `${process.env.BASE_URL || 'http://localhost:3000'}/api/referral/action?jobId=1&referralId=1&action=yes`,
+    noUrl: `${process.env.BASE_URL || 'http://localhost:3000'}/api/referral/action?jobId=1&referralId=1&action=no`,
     senderName: "Prasad Pansare",
     senderEmail: "prasadpansare02@gmail.com",
     senderPhone: "+353894323354",
