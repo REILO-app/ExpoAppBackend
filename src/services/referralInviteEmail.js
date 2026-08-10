@@ -1,4 +1,5 @@
 const { sendReiloEmail } = require('./emailService');
+const { createReferralToken } = require('./tokenService');
 
 function buildReferralInviteEmailBody({ referralName, userName, company }) {
   const firstName = referralName.split(' ')[0];
@@ -31,8 +32,16 @@ async function sendReferralInviteEmail({ referral, user, baseUrl }) {
   }
 
   const referralId = referral._id.toString();
-  const yesUrl = `${baseUrl}/api/referral/action?referralId=${referralId}&action=yes&type=invite`;
-  const noUrl = `${baseUrl}/api/referral/action?referralId=${referralId}&action=no&type=invite`;
+
+  // Create two separate signed, expiring, one-time tokens — one per action.
+  // This replaces the raw referralId in the URL, preventing IDOR and replay attacks.
+  const [yesToken, noToken] = await Promise.all([
+    createReferralToken({ referralId, email: referral.email, action: 'yes', type: 'invite' }),
+    createReferralToken({ referralId, email: referral.email, action: 'no',  type: 'invite' }),
+  ]);
+
+  const yesUrl = `${baseUrl}/api/referral/action?token=${yesToken}`;
+  const noUrl  = `${baseUrl}/api/referral/action?token=${noToken}`;
 
   const body = buildReferralInviteEmailBody({
     referralName: referral.name,

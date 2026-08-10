@@ -12,6 +12,7 @@ const Job = require('./models/Job');
 const Notification = require('./models/Notification');
 const { buildReiloEmailHtml } = require('./services/emailTemplate');
 const { sendReiloEmail } = require('./services/emailService');
+const { createReferralToken, verifyAndConsumeToken } = require('./services/tokenService');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -98,8 +99,14 @@ app.post('/api/send-email', optionalUpload, async (req, res) => {
   let noUrl = null;
 
   if (jobId && referralId) {
-    yesUrl = `${baseUrl}/api/referral/action?jobId=${jobId}&referralId=${referralId}&action=yes`;
-    noUrl = `${baseUrl}/api/referral/action?jobId=${jobId}&referralId=${referralId}&action=no`;
+    // Create signed, expiring, one-time tokens instead of embedding raw IDs.
+    // This prevents IDOR (anyone changing jobId/referralId) and replay attacks.
+    const [yesToken, noToken] = await Promise.all([
+      createReferralToken({ referralId, jobId, email: to, action: 'yes', type: 'job' }),
+      createReferralToken({ referralId, jobId, email: to, action: 'no',  type: 'job' }),
+    ]);
+    yesUrl = `${baseUrl}/api/referral/action?token=${yesToken}`;
+    noUrl  = `${baseUrl}/api/referral/action?token=${noToken}`;
   }
 
   try {
@@ -169,47 +176,92 @@ app.get('/api/preview-email', (req, res) => {
 });
 
 // GET endpoint to handle referral action clicks from the email
+// Security: all context is read from a signed JWT — never from raw query params.
 app.get('/api/referral/action', async (req, res) => {
-  const { jobId, referralId, action, type } = req.query;
+  const { token } = req.query;
 
-  if (!referralId || !action) {
-    return res.status(400).send('Invalid action parameters.');
+  // ─── Helper: render a styled error page ────────────────────────────────────
+  const sendErrorPage = (heading, detail) => {
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Reilo — Link Problem</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #080D18; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; color: #FFFFFF; }
+          .card { background: #0F172A; padding: 48px 36px; border-radius: 24px; border: 1px solid rgba(239, 68, 68, 0.3); text-align: center; max-width: 420px; width: 88%; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+          .logo-badge { display: inline-block; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.35); border-radius: 10px; padding: 6px 14px; margin-bottom: 24px; color: #818CF8; font-weight: 800; font-size: 14px; letter-spacing: 2px; }
+          .icon-circle { width: 64px; height: 64px; border-radius: 32px; background-color: #7C3AED; color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; margin: 0 auto 20px auto; }
+          h1 { color: #FFFFFF; font-size: 22px; margin-top: 0; margin-bottom: 10px; font-weight: 800; }
+          p { color: #94A3B8; font-size: 15px; line-height: 1.6; margin: 0; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="logo-badge">❖ REILO</div>
+          <div class="icon-circle">⚠</div>
+          <h1>${heading}</h1>
+          <p>${detail}</p>
+        </div>
+      </body>
+      </html>
+    `);
+  };
+
+  // ─── 1. Token must be present ───────────────────────────────────────────────
+  if (!token) {
+    return sendErrorPage('Invalid Link', 'This link is missing required information. Please use the link from your email.');
   }
 
-  const isAccepted = action.toLowerCase() === 'yes';
-  const isInvite = type === 'invite' || !jobId;
+  // ─── 2. Verify JWT signature, expiry, and one-time use ─────────────────────
+  let payload;
+  try {
+    payload = await verifyAndConsumeToken(token);
+  } catch (err) {
+    console.warn('[ACTION] Token rejected:', err.code, err.message);
+    if (err.code === 'TOKEN_EXPIRED') {
+      return sendErrorPage('Link Expired', 'This link has expired (links are valid for 24 hours). Please ask the sender to resend the request.');
+    }
+    if (err.code === 'TOKEN_ALREADY_USED') {
+      return sendErrorPage('Already Responded', 'You have already responded to this request. Your previous response has been recorded.');
+    }
+    return sendErrorPage('Invalid Link', 'This link is invalid or has been tampered with. Please use the original link from your email.');
+  }
+
+  const { referralId, jobId, action, type } = payload;
+  const isAccepted = action === 'yes';
+  const isInvite = type === 'invite';
   const statusLabel = isAccepted ? 'Accepted' : 'Rejected';
 
+  // ─── 3. Update referral status in DB ───────────────────────────────────────
   try {
     const referral = await Referral.findById(referralId);
     if (referral) {
       console.log('[ACTION] Found referral:', referral._id, 'Current history length:', referral.history?.length);
-      
+
       referral.status = statusLabel;
       referral.statusColor = isAccepted ? '#059669' : '#DC2626';
-      referral.statusBg = isAccepted ? '#ECFDF5' : '#FEF2F2';
+      referral.statusBg   = isAccepted ? '#ECFDF5' : '#FEF2F2';
       referral.statusBorder = isAccepted ? '#A7F3D0' : '#FECACA';
-      referral.dotColor = isAccepted ? '#10B981' : '#EF4444';
-      
-      // Ensure history array exists
-      if (!referral.history) {
-        referral.history = [];
-      }
+      referral.dotColor   = isAccepted ? '#10B981' : '#EF4444';
+
+      if (!referral.history) referral.history = [];
 
       const historyEvent = {
-        type: isAccepted ? 'referral_accepted' : 'referral_rejected',
-        title: isAccepted ? 'Request Accepted' : 'Request Rejected',
-        description: isInvite 
+        type:  isAccepted ? 'referral_accepted' : 'referral_rejected',
+        title: isAccepted ? 'Request Accepted'  : 'Request Rejected',
+        description: isInvite
           ? `Connection request was ${isAccepted ? 'accepted' : 'rejected'}`
           : `Referral request for the job was ${isAccepted ? 'accepted' : 'rejected'}`,
-        icon: isAccepted ? 'check-circle' : 'x-circle',
+        icon:  isAccepted ? 'check-circle' : 'x-circle',
         color: isAccepted ? '#10B981' : '#EF4444',
-        timestamp: new Date()
+        timestamp: new Date(),
       };
 
       referral.history.push(historyEvent);
       referral.markModified('history');
-      
+
       console.log('[ACTION] History after push, length:', referral.history.length);
       console.log('[ACTION] New event:', JSON.stringify(historyEvent));
 
@@ -245,14 +297,15 @@ app.get('/api/referral/action', async (req, res) => {
     console.error('Failed to persist referral action:', error);
   }
 
-  const bgColor = isAccepted ? '#ECFDF5' : '#FEF2F2';
+  // ─── 4. Render success confirmation page ───────────────────────────────────
+  const bgColor     = isAccepted ? '#ECFDF5' : '#FEF2F2';
   const borderColor = isAccepted ? '#A7F3D0' : '#FECACA';
-  const textColor = isAccepted ? '#047857' : '#B91C1C';
-  const badgeBg = isAccepted ? '#059669' : '#DC2626';
-  const message = isAccepted
+  const textColor   = isAccepted ? '#047857' : '#B91C1C';
+  const badgeBg     = isAccepted ? '#059669' : '#DC2626';
+  const message     = isAccepted
     ? (isInvite
-      ? 'Thank you! The candidate will be notified that you are willing to refer them in the future.'
-      : 'Thank you! The candidate will be notified that you accepted the referral request.')
+        ? 'Thank you! The candidate will be notified that you are willing to refer them in the future.'
+        : 'Thank you! The candidate will be notified that you accepted the referral request.')
     : 'Thank you for letting us know. The candidate will be notified.';
   const icon = isAccepted ? '✓' : '✕';
 
