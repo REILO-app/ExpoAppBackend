@@ -6,15 +6,12 @@ const morgan = require('morgan');
 const mongoose = require('mongoose');
 const { rateLimit } = require('express-rate-limit');
 const { generateEmailDraft } = require('./services/geminiService');
-const multer = require('multer');
 const Referral = require('./models/Referral');
 const Job = require('./models/Job');
 const Notification = require('./models/Notification');
 const { buildReiloEmailHtml } = require('./services/emailTemplate');
 const { sendReiloEmail } = require('./services/emailService');
 const { createReferralToken, verifyAndConsumeToken } = require('./services/tokenService');
-
-const upload = multer({ storage: multer.memoryStorage() });
 
 const app = express();
 
@@ -70,19 +67,20 @@ app.post('/api/generate-email', emailGenerationLimiter, async (req, res) => {
 });
 
 // POST endpoint for sending email directly via SMTP/Nodemailer
-const optionalUpload = (req, res, next) => {
-  if (req.is('multipart/form-data')) {
-    upload.single('resume')(req, res, next);
-  } else {
-    next();
-  }
-};
-
-app.post('/api/send-email', optionalUpload, async (req, res) => {
-  console.log('[send-email] Content-Type:', req.headers['content-type']);
-  console.log('[send-email] req.file:', req.file ? `name=${req.file.originalname}, size=${req.file.size}` : 'undefined (no file received)');
+// All payloads arrive as JSON — resume attachments are base64-encoded strings.
+// This avoids multipart/form-data streaming which crashes on Vercel serverless.
+app.post('/api/send-email', async (req, res) => {
   console.log('[send-email] req.body keys:', Object.keys(req.body || {}));
-  const { to, subject, body, jobId, referralId, senderName, senderEmail, senderPhone, senderLinkedin } = req.body;
+  const {
+    to, subject, body, jobId, referralId,
+    senderName, senderEmail, senderPhone, senderLinkedin,
+    attachmentBase64, attachmentFilename, attachmentMimeType,
+  } = req.body;
+
+  // Decode base64 resume into a Buffer for Nodemailer (if provided)
+  const attachmentBuffer = attachmentBase64
+    ? Buffer.from(attachmentBase64, 'base64')
+    : undefined;
 
   if (!to) {
     return res.status(400).json({ status: 'error', message: 'Recipient email (to) is required' });
@@ -122,8 +120,8 @@ app.post('/api/send-email', optionalUpload, async (req, res) => {
         senderPhone,
         senderLinkedin,
       },
-      attachmentBuffer: req.file?.buffer,
-      attachmentFilename: req.file?.originalname,
+      attachmentBuffer,
+      attachmentFilename: attachmentFilename || 'resume.pdf',
     });
 
     if (result.simulated) {
