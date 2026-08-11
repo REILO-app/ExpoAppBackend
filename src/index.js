@@ -92,22 +92,27 @@ app.post('/api/send-email', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Email body is required' });
   }
 
-  const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
-  let yesUrl = null;
-  let noUrl = null;
-
-  if (jobId && referralId) {
-    // Create signed, expiring, one-time tokens instead of embedding raw IDs.
-    // This prevents IDOR (anyone changing jobId/referralId) and replay attacks.
-    const [yesToken, noToken] = await Promise.all([
-      createReferralToken({ referralId, jobId, email: to, action: 'yes', type: 'job' }),
-      createReferralToken({ referralId, jobId, email: to, action: 'no',  type: 'job' }),
-    ]);
-    yesUrl = `${baseUrl}/api/referral/action?token=${yesToken}`;
-    noUrl  = `${baseUrl}/api/referral/action?token=${noToken}`;
-  }
-
   try {
+    let yesUrl = null;
+    let noUrl = null;
+
+    if (jobId && referralId) {
+      // Only create tokens when jobId is a valid-looking MongoDB ObjectId (24 hex chars).
+      // The frontend may send '1' as a fallback which would cause a Mongoose CastError.
+      const isValidObjectId = /^[a-f\d]{24}$/i.test(jobId) && /^[a-f\d]{24}$/i.test(referralId);
+
+      if (isValidObjectId) {
+        // Create signed, expiring, one-time tokens instead of embedding raw IDs.
+        // This prevents IDOR (anyone changing jobId/referralId) and replay attacks.
+        const [yesToken, noToken] = await Promise.all([
+          createReferralToken({ referralId, jobId, email: to, action: 'yes', type: 'job' }),
+          createReferralToken({ referralId, jobId, email: to, action: 'no',  type: 'job' }),
+        ]);
+        yesUrl = `${baseUrl}/api/referral/action?token=${yesToken}`;
+        noUrl  = `${baseUrl}/api/referral/action?token=${noToken}`;
+      }
+    }
+
     const result = await sendReiloEmail({
       to,
       subject,
