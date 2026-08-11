@@ -95,6 +95,7 @@ app.post('/api/send-email', async (req, res) => {
   try {
     let yesUrl = null;
     let noUrl = null;
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
 
     if (jobId && referralId) {
       // Only create tokens when jobId is a valid-looking MongoDB ObjectId (24 hex chars).
