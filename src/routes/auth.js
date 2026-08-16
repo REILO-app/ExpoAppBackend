@@ -3,6 +3,10 @@ const router = express.Router();
 const { getAuth } = require('firebase-admin/auth');
 require('../config/firebase'); // ensures initializeApp() runs before getAuth()
 const User = require('../models/User');
+const Referral = require('../models/Referral');
+const ReferralToken = require('../models/ReferralToken');
+const Job = require('../models/Job');
+const Notification = require('../models/Notification');
 const authMiddleware = require('../middleware/auth');
 
 const formatUser = (user) => ({
@@ -134,6 +138,52 @@ router.put('/me', authMiddleware, async (req, res) => {
     res.json(formatUser(user));
   } catch (error) {
     console.error('Update profile error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/auth/me
+ *
+ * Permanently deletes the authenticated user's account and all associated data:
+ * - Referrals created by the user
+ * - ReferralTokens linked to those referrals
+ * - Jobs created by the user
+ * - Notifications for the user
+ * - The User document itself
+ * - The Firebase Authentication account
+ */
+router.delete('/me', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const firebaseUid = req.user.firebaseUid;
+    console.log('DELETE /me — deleting account for user:', userId.toString(), 'firebaseUid:', firebaseUid);
+
+    // 1. Find all referrals by this user so we can clean up their tokens
+    const referralIds = await Referral.find({ userId }).distinct('_id');
+
+    // 2. Delete all related data in parallel
+    await Promise.all([
+      Referral.deleteMany({ userId }),
+      ReferralToken.deleteMany({ referralId: { $in: referralIds } }),
+      Job.deleteMany({ userId }),
+      Notification.deleteMany({ userId }),
+      User.findByIdAndDelete(userId),
+    ]);
+
+    // 3. Delete the Firebase account
+    if (firebaseUid) {
+      try {
+        await getAuth().deleteUser(firebaseUid);
+      } catch (fbErr) {
+        // Log but don't fail — MongoDB data is already gone
+        console.error('Failed to delete Firebase account:', fbErr.message);
+      }
+    }
+
+    res.json({ deleted: true });
+  } catch (error) {
+    console.error('Delete account error:', error);
     res.status(500).json({ error: error.message });
   }
 });
