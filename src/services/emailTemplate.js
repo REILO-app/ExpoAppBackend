@@ -65,7 +65,7 @@ function buildReiloEmailHtml({
                   <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                     <tr>
                       <td valign="top" style="text-align: left;">
-                        <h2 style="color: #FFFFFF; font-size: 20px; font-weight: 400; margin: 0 0 12px 0; letter-spacing: 4px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-transform: uppercase;">
+                        <h2 style="color: #FFFFFF; font-size: 20px; font-weight: 400; margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-transform: uppercase;">
                           ${formattedName}
                         </h2>
                         <p style="margin: 0 0 4px 0; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">

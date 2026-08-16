@@ -37,11 +37,11 @@ async function sendReferralInviteEmail({ referral, user, baseUrl }) {
   // This replaces the raw referralId in the URL, preventing IDOR and replay attacks.
   const [yesToken, noToken] = await Promise.all([
     createReferralToken({ referralId, email: referral.email, action: 'yes', type: 'invite' }),
-    createReferralToken({ referralId, email: referral.email, action: 'no',  type: 'invite' }),
+    createReferralToken({ referralId, email: referral.email, action: 'no', type: 'invite' }),
   ]);
 
   const yesUrl = `${baseUrl}/api/referral/action?token=${yesToken}`;
-  const noUrl  = `${baseUrl}/api/referral/action?token=${noToken}`;
+  const noUrl = `${baseUrl}/api/referral/action?token=${noToken}`;
 
   const body = buildReferralInviteEmailBody({
     referralName: referral.name,
