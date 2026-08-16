@@ -129,6 +129,29 @@ router.put('/referrals/:id/status', authMiddleware, async (req, res) => {
   }
 });
 
+router.put('/referrals/:id', authMiddleware, async (req, res) => {
+  try {
+    const referral = await Referral.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!referral) return res.status(404).json({ error: 'Not found' });
+
+    const { name, company, role, location, email, phone, linkedin, notes } = req.body;
+    if (name !== undefined) referral.name = name;
+    if (company !== undefined) referral.company = company;
+    if (role !== undefined) referral.role = role;
+    if (location !== undefined) referral.location = location;
+    if (email !== undefined) referral.email = email;
+    if (phone !== undefined) referral.phone = phone;
+    if (linkedin !== undefined) referral.linkedin = linkedin;
+    if (notes !== undefined) referral.notes = notes;
+
+    await referral.save();
+    res.json({ ...referral.toObject(), id: referral._id.toString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 router.get('/referrals/:id', authMiddleware, async (req, res) => {
   try {
     const referral = await Referral.findOne({ _id: req.params.id, userId: req.user._id });

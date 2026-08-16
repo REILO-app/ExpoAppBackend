@@ -116,7 +116,7 @@ router.get('/me', authMiddleware, async (req, res) => {
  */
 router.put('/me', authMiddleware, async (req, res) => {
   try {
-    const allowedFields = ['name', 'role', 'company', 'phone', 'linkedin', 'website', 'location'];
+    const allowedFields = ['name', 'role', 'company', 'phone', 'linkedin', 'website', 'location', 'email'];
     const updates = {};
 
     for (const field of allowedFields) {
