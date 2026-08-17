@@ -39,8 +39,14 @@ app.use('/api/auth', authRoutes);
 
 const apiRoutes = require('./routes/api');
 app.use('/api', apiRoutes);
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Reilo API is running' });
+app.get('/health', async (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+  res.json({ 
+    status: 'ok', 
+    message: 'Reilo API is running',
+    database: dbStatus,
+    readyState: mongoose.connection.readyState
+  });
 });
 
 // POST endpoint for generating emails using Gemini
